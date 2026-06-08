@@ -25,28 +25,26 @@ load_dotenv()
 
 PAGEINDEX_API_KEY = os.getenv("PAGEINDEX_API_KEY", "")
 STANDARDIZED_DIR = Path(__file__).parent.parent / "data" / "standardized"
+LANDING_DIR = Path(__file__).parent.parent / "data" / "landing"
 
 
 def upload_documents():
     """
     Upload toàn bộ markdown documents lên PageIndex.
     """
-    # TODO: Implement upload
-    #
-    # Tham khảo: https://github.com/VectifyAI/PageIndex
-    #
-    # from pageindex import PageIndex
-    #
-    # pi = PageIndex(api_key=PAGEINDEX_API_KEY)
-    #
-    # for md_file in STANDARDIZED_DIR.rglob("*.md"):
-    #     content = md_file.read_text(encoding="utf-8")
-    #     pi.upload(
-    #         content=content,
-    #         metadata={"filename": md_file.name, "type": md_file.parent.name}
-    #     )
-    #     print(f"  ✓ Uploaded: {md_file.name}")
-    raise NotImplementedError("Implement upload_documents")
+    from pageindex import PageIndexClient
+    import time
+
+    pi = PageIndexClient(api_key=PAGEINDEX_API_KEY)
+
+    for pdf_file in LANDING_DIR.rglob("*.pdf"):
+        try:
+            # SDK hiện tại của PageIndex chỉ hỗ trợ PDF
+            pi.submit_document(file_path=str(pdf_file))
+            print(f"  [OK] Uploaded: {pdf_file.name}")
+            time.sleep(1) # Tránh rate limit
+        except Exception as e:
+            print(f"  [Loi] upload {pdf_file.name}: {e}")
 
 
 def pageindex_search(query: str, top_k: int = 5) -> list[dict]:
@@ -66,26 +64,59 @@ def pageindex_search(query: str, top_k: int = 5) -> list[dict]:
             'source': 'pageindex'   # Đánh dấu nguồn retrieval
         }
     """
-    # TODO: Implement PageIndex query
-    #
-    # from pageindex import PageIndex
-    #
-    # pi = PageIndex(api_key=PAGEINDEX_API_KEY)
-    # results = pi.query(query=query, top_k=top_k)
-    #
-    # return [
-    #     {
-    #         "content": r.text,
-    #         "score": r.score,
-    #         "metadata": r.metadata,
-    #         "source": "pageindex"
-    #     }
-    #     for r in results
-    # ]
-    raise NotImplementedError("Implement pageindex_search")
+    from pageindex import PageIndexClient
+    import time
+
+    pi = PageIndexClient(api_key=PAGEINDEX_API_KEY)
+    
+    # Lấy danh sách doc_ids đã upload
+    try:
+        docs = pi.list_documents(limit=10).get("documents", [])
+    except Exception as e:
+        print(f"[Loi] lay danh sach document: {e}")
+        return []
+
+    all_results = []
+    
+    # Tìm kiếm trên từng document (do SDK hiện tại submit_query yêu cầu doc_id)
+    for doc in docs:
+        doc_id = doc.get("id")
+        if not doc_id:
+            continue
+            
+        try:
+            res = pi.submit_query(doc_id=doc_id, query=query)
+            retrieval_id = res.get("retrieval_id")
+            
+            if retrieval_id:
+                # Đợi kết quả trả về
+                for _ in range(5):
+                    time.sleep(1)
+                    status_res = pi.get_retrieval(retrieval_id)
+                    if status_res.get("status") == "completed":
+                        # Trích xuất chunks từ kết quả (tuỳ theo format response của API)
+                        chunks = status_res.get("results", [])
+                        for chunk in chunks:
+                            all_results.append({
+                                "content": chunk.get("text", str(chunk)),
+                                "score": chunk.get("score", 0.0),
+                                "metadata": doc.get("name", ""),
+                                "source": "pageindex"
+                            })
+                        break
+        except Exception as e:
+            print(f"[Loi] search doc {doc_id}: {e}")
+
+    # Sort & return top_k
+    all_results = sorted(all_results, key=lambda x: x["score"], reverse=True)
+    return all_results[:top_k]
 
 
 if __name__ == "__main__":
+    import sys
+    if sys.stdout.encoding.lower() != 'utf-8':
+        sys.stdout.reconfigure(encoding='utf-8')
+        
     if not PAGEINDEX_API_KEY:
         print("⚠ Hãy set PAGEINDEX_API_KEY trong file .env")
         print("  Đăng ký tại: https://pageindex.ai/")

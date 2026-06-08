@@ -121,28 +121,25 @@ def rerank_rrf(
     Returns:
         List of top_k candidates sorted by RRF score descending.
     """
-    # TODO: Implement RRF
-    #
-    # rrf_scores = {}  # content -> score
-    # content_map = {}  # content -> full dict
-    #
-    # for ranked_list in ranked_lists:
-    #     for rank, item in enumerate(ranked_list, 1):
-    #         key = item["content"]
-    #         rrf_scores[key] = rrf_scores.get(key, 0) + 1 / (k + rank)
-    #         content_map[key] = item
-    #
-    # # Sort by RRF score
-    # sorted_items = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
-    #
-    # results = []
-    # for content, score in sorted_items[:top_k]:
-    #     item = content_map[content].copy()
-    #     item["score"] = score
-    #     results.append(item)
-    #
-    # return results
-    raise NotImplementedError("Implement rerank_rrf")
+    rrf_scores = {}  # content -> score
+    content_map = {}  # content -> full dict
+
+    for ranked_list in ranked_lists:
+        for rank, item in enumerate(ranked_list, 1):
+            key = item["content"]
+            rrf_scores[key] = rrf_scores.get(key, 0) + 1 / (k + rank)
+            content_map[key] = item
+
+    # Sort by RRF score
+    sorted_items = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+
+    results = []
+    for content, score in sorted_items[:top_k]:
+        item = content_map[content].copy()
+        item["score"] = score
+        results.append(item)
+
+    return results
 
 
 # =============================================================================
@@ -181,11 +178,16 @@ def rerank(
 
 if __name__ == "__main__":
     # Test with dummy data
-    dummy_candidates = [
+    list_1 = [
         {"content": "Điều 248: Tội tàng trữ trái phép chất ma tuý", "score": 0.8, "metadata": {}},
-        {"content": "Nghệ sĩ X bị bắt vì sử dụng ma tuý", "score": 0.7, "metadata": {}},
         {"content": "Hình phạt tù từ 2-7 năm cho tội tàng trữ", "score": 0.6, "metadata": {}},
     ]
-    results = rerank("hình phạt tàng trữ ma tuý", dummy_candidates, top_k=2)
+    list_2 = [
+        {"content": "Điều 248: Tội tàng trữ trái phép chất ma tuý", "score": 0.9, "metadata": {}},
+        {"content": "Nghệ sĩ X bị bắt vì sử dụng ma tuý", "score": 0.7, "metadata": {}},
+    ]
+    
+    print("Thử nghiệm Reciprocal Rank Fusion (RRF):")
+    results = rerank_rrf([list_1, list_2], top_k=3)
     for r in results:
-        print(f"[{r['score']:.3f}] {r['content']}")
+        print(f"[{r['score']:.4f}] {r['content']}")

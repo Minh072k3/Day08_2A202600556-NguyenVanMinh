@@ -26,37 +26,43 @@ def semantic_search(query: str, top_k: int = 10) -> list[dict]:
         }
         Sorted by score descending.
     """
-    # TODO: Implement semantic search
-    #
-    # Bước 1: Embed query bằng cùng model ở Task 4
-    # Bước 2: Query vector store (cosine similarity)
-    # Bước 3: Return top_k results
-    #
-    # Ví dụ với Weaviate:
-    # import weaviate
-    # from sentence_transformers import SentenceTransformer
-    #
-    # model = SentenceTransformer("BAAI/bge-m3")
-    # query_embedding = model.encode(query).tolist()
-    #
-    # client = weaviate.connect_to_local()
-    # collection = client.collections.get("DrugLawDocs")
-    #
-    # results = collection.query.near_vector(
-    #     near_vector=query_embedding,
-    #     limit=top_k,
-    #     return_metadata=MetadataQuery(distance=True)
-    # )
-    #
-    # return [
-    #     {
-    #         "content": obj.properties["content"],
-    #         "score": 1 - obj.metadata.distance,  # distance → similarity
-    #         "metadata": {"source": obj.properties["source"], ...}
-    #     }
-    #     for obj in results.objects
-    # ]
-    raise NotImplementedError("Implement semantic_search")
+    from sentence_transformers import SentenceTransformer
+    import chromadb
+    from pathlib import Path
+
+    # 1. Khởi tạo kết nối tới ChromaDB giống y như Task 4
+    db_path = str(Path(__file__).parent.parent / "data" / "vectorstore" / "chroma_db")
+    client = chromadb.PersistentClient(path=db_path)
+    collection = client.get_collection(name="DrugLawDocs")
+
+    # 2. Embed câu truy vấn bằng mô hình BAAI/bge-m3
+    model = SentenceTransformer("BAAI/bge-m3")
+    query_embedding = model.encode(query).tolist()
+
+    # 3. Tìm kiếm trong ChromaDB
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k
+    )
+
+    # 4. Format lại kết quả trả về
+    formatted_results = []
+    if results and results["documents"] and len(results["documents"]) > 0:
+        docs = results["documents"][0]
+        metadatas = results["metadatas"][0]
+        distances = results["distances"][0]
+        
+        for doc, meta, dist in zip(docs, metadatas, distances):
+            # ChromaDB trả về distance (khoảng cách), ta quy đổi sang similarity score (điểm tương đồng)
+            # Vì ở Task 4 dùng cosine, score = 1 - distance
+            score = 1.0 - dist
+            formatted_results.append({
+                "content": doc,
+                "score": float(score),
+                "metadata": meta
+            })
+            
+    return formatted_results
 
 
 if __name__ == "__main__":
